@@ -1,0 +1,77 @@
+[project]
+name = "cc-router"
+version = "0.2.0"
+description = "Universal Multi-Agent ↔ Multi-CC Connection Hub"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "mcp>=1.0.0",
+]
+authors = [
+    {name = "CC Router Team"}
+]
+keywords = ["claude", "multi-agent", "router", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.scripts]
+cc-router = "cc_router.__main__:main"
+ccr = "cc_router.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/isagoakira/Synapse-cc-router"
+Source = "https://github.com/isagoakira/Synapse-cc-router"
+Issues = "https://github.com/isagoakira/Synapse-cc-router/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cc_router*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+no_implicit_optional = false
+
+[tool.coverage.run]
+source = ["cc_router"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "def __repr__", "raise NotImplementedError"]

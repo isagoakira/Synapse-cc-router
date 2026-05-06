@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/cc-router/main/cc_router_config.schema.json",
+  "comment": "Copy this file to cc_router_config.json and adjust values for your environment.",
+  "cc_cli_path": "claude",
+  "timeout": 300.0,
+  "hub_host": "localhost",
+  "hub_port": 8765,
+  "log_level": "INFO",
+  "bypass_permission": true,
+  "mcp_enabled": false,
+  "mcp_server_name": "synapse-hub",
+  "max_cc_instances": 5,
+  "cc_defaults": {
+    "memory_gb": 2,
+    "cold_start_timeout_s": 30,
+    "resume_timeout_s": 10
+  }
+}

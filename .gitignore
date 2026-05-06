@@ -1,0 +1,70 @@
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ── Virtual environments ────────────────────────────────
+venv/
+.venv/
+env/
+.env
+.env.*
+*.env
+
+# ── IDE / Editors ──────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+
+# ── OS files ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs / Runtime ─────────────────────────────────────
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ── Project specific: config (may contain secrets/local paths) ─
+cc_router_config.json
+cc_router_config.local.json
+# Template is tracked — it documents the required fields
+!cc_router_config.template.json
+cc_router_env.sh
+config.local.yaml
+config.local.yml
+*.local.*
+
+# ── Harness / Agent artifacts ──────────────────────────
+.claude/
+harness-state.json
+continue.flag
+stop.flag
+pending-command.txt
+
+# ── Memory / Personal notes ────────────────────────────
+memory/
+*.memento.md
+
+# ── Misc transient files ───────────────────────────────
+*.bak
+*.orig
+*.tmp
+*.temp
+.DS_Store
