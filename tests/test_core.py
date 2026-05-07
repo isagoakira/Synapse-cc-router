@@ -592,7 +592,7 @@ class TestHub:
         hub.connect_agent(agent.agent_id, agent)
 
         # First task starts immediately
-        task_id_1 = await hub.submit_task(
+        await hub.submit_task(
             "cap_agent", "task one", tag="cap", timeout=3.0
         )
         await asyncio.sleep(0.2)
