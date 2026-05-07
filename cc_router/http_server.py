@@ -60,10 +60,12 @@ async def handle_health(request: web.Request) -> web.Response:
     hub = get_global_hub()
     summary = hub.get_health_summary()
     agents = hub.registry.list_all_sync()
-    return _ok({
-        "agents": {"count": len(agents)},
-        **summary,
-    })
+    return _ok(
+        {
+            "agents": {"count": len(agents)},
+            **summary,
+        }
+    )
 
 
 # ── Tasks ───────────────────────────────────────────────────────────
@@ -104,16 +106,18 @@ async def handle_get_task(request: web.Request) -> web.Response:
     if not task:
         return _err("Task not found", status=404)
 
-    return _ok({
-        "task_id": task.task_id,
-        "status": task.status,
-        "cc_id": task.cc_id,
-        "task": task.task,
-        "caller_agent_id": task.caller_agent_id,
-        "created_at": task.created_at,
-        "result": task.result.text if task.result else None,
-        "error": task.error,
-    })
+    return _ok(
+        {
+            "task_id": task.task_id,
+            "status": task.status,
+            "cc_id": task.cc_id,
+            "task": task.task,
+            "caller_agent_id": task.caller_agent_id,
+            "created_at": task.created_at,
+            "result": task.result.text if task.result else None,
+            "error": task.error,
+        }
+    )
 
 
 @routes.get("/api/tasks")
@@ -122,19 +126,21 @@ async def handle_list_tasks(request: web.Request) -> web.Response:
     hub = get_global_hub()
     agent_id = request.query.get("agent_id")
     tasks = hub.list_tasks(agent_id)
-    return _ok({
-        "count": len(tasks),
-        "tasks": [
-            {
-                "task_id": t.task_id,
-                "status": t.status,
-                "cc_id": t.cc_id,
-                "caller_agent_id": t.caller_agent_id,
-                "created_at": t.created_at,
-            }
-            for t in tasks
-        ],
-    })
+    return _ok(
+        {
+            "count": len(tasks),
+            "tasks": [
+                {
+                    "task_id": t.task_id,
+                    "status": t.status,
+                    "cc_id": t.cc_id,
+                    "caller_agent_id": t.caller_agent_id,
+                    "created_at": t.created_at,
+                }
+                for t in tasks
+            ],
+        }
+    )
 
 
 # ── CC instances ────────────────────────────────────────────────────
@@ -179,20 +185,22 @@ async def handle_list_cc(request: web.Request) -> web.Response:
         if status_filter
         else hub.cc_registry.list_all()
     )
-    return _ok({
-        "count": len(instances),
-        "instances": [
-            {
-                "cc_id": inst.cc_id,
-                "workspace": inst.workspace,
-                "status": inst.status,
-                "tags": inst.tag if hasattr(inst, "tag") else [],
-                "capabilities": inst.capability if hasattr(inst, "capability") else [],
-                "session_id": inst.session_id,
-            }
-            for inst in instances
-        ],
-    })
+    return _ok(
+        {
+            "count": len(instances),
+            "instances": [
+                {
+                    "cc_id": inst.cc_id,
+                    "workspace": inst.workspace,
+                    "status": inst.status,
+                    "tags": inst.tag if hasattr(inst, "tag") else [],
+                    "capabilities": inst.capability if hasattr(inst, "capability") else [],
+                    "session_id": inst.session_id,
+                }
+                for inst in instances
+            ],
+        }
+    )
 
 
 # ── Bridge tools (for JS bridge delegation) ─────────────────────────

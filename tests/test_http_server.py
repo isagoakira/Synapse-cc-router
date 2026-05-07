@@ -47,16 +47,23 @@ class TestAppCreation:
         self.mock_hub.registry.list_all_sync = MagicMock(return_value=[])
         self.mock_hub.list_tasks = MagicMock(return_value=[])
         self.mock_hub.get_task = MagicMock(return_value=None)
-        self.mock_hub.register_cc = MagicMock(
-            side_effect=lambda adapter: adapter.cc_id
-        )
+        self.mock_hub.register_cc = MagicMock(side_effect=lambda adapter: adapter.cc_id)
         self.mock_hub.submit_task = AsyncMock(return_value="task_test")
-        self.mock_hub.get_health_summary = MagicMock(return_value={
-            "cc_instances": {"count": 0, "by_status": {}, "details": []},
-            "tasks": {"count": 0, "pending": 0, "running": 0, "done": 0, "error": 0, "queued": 0},
-            "capacity": {"max_concurrent": 5, "active": 0, "queued": 0, "available_slots": 5},
-            "monitoring": {"health_running": False, "health_interval": 30.0, "max_failures": 3},
-        })
+        self.mock_hub.get_health_summary = MagicMock(
+            return_value={
+                "cc_instances": {"count": 0, "by_status": {}, "details": []},
+                "tasks": {
+                    "count": 0,
+                    "pending": 0,
+                    "running": 0,
+                    "done": 0,
+                    "error": 0,
+                    "queued": 0,
+                },
+                "capacity": {"max_concurrent": 5, "active": 0, "queued": 0, "available_slots": 5},
+                "monitoring": {"health_running": False, "health_interval": 30.0, "max_failures": 3},
+            }
+        )
 
         # Patch at the http_server module level (where get_global_hub is imported)
         patcher = patch("cc_router.http_server.get_global_hub", return_value=self.mock_hub)

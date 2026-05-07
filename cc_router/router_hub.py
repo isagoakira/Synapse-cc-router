@@ -400,15 +400,17 @@ class UniversalRouterHub:
         instance_health: list[dict[str, Any]] = []
         for inst in cc_instances:
             status_counts[inst.status] = status_counts.get(inst.status, 0) + 1
-            instance_health.append({
-                "cc_id": inst.cc_id,
-                "status": inst.status,
-                "workspace": inst.workspace,
-                "tags": inst.tag if hasattr(inst, "tag") else [],
-                "capabilities": inst.capability if hasattr(inst, "capability") else [],
-                "has_session": bool(inst.session_id),
-                "consecutive_failures": self._consecutive_failures.get(inst.cc_id, 0),
-            })
+            instance_health.append(
+                {
+                    "cc_id": inst.cc_id,
+                    "status": inst.status,
+                    "workspace": inst.workspace,
+                    "tags": inst.tag if hasattr(inst, "tag") else [],
+                    "capabilities": inst.capability if hasattr(inst, "capability") else [],
+                    "has_session": bool(inst.session_id),
+                    "consecutive_failures": self._consecutive_failures.get(inst.cc_id, 0),
+                }
+            )
 
         tasks = self.list_tasks()
         task_counts = {"pending": 0, "running": 0, "done": 0, "error": 0, "queued": 0}

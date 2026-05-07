@@ -592,9 +592,7 @@ class TestHub:
         hub.connect_agent(agent.agent_id, agent)
 
         # First task starts immediately
-        await hub.submit_task(
-            "cap_agent", "task one", tag="cap", timeout=3.0
-        )
+        await hub.submit_task("cap_agent", "task one", tag="cap", timeout=3.0)
         await asyncio.sleep(0.2)
 
         # Manually set active count to max
@@ -602,9 +600,7 @@ class TestHub:
             hub._active_task_count = 1
 
         # Second task should be queued
-        task_id_2 = await hub.submit_task(
-            "cap_agent", "task two", tag="cap", timeout=3.0
-        )
+        task_id_2 = await hub.submit_task("cap_agent", "task two", tag="cap", timeout=3.0)
         task_2 = hub.get_task(task_id_2)
         assert task_2.status == "queued"
 

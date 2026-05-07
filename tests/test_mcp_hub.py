@@ -154,8 +154,11 @@ class TestPydanticModels:
 
     def test_submit_task_input_all_fields(self):
         m = SubmitTaskInput(
-            task="test", tag="code", capability=["code"],
-            timeout=60.0, agent_id="my-agent",
+            task="test",
+            tag="code",
+            capability=["code"],
+            timeout=60.0,
+            agent_id="my-agent",
         )
         assert m.tag == "code"
         assert m.capability == ["code"]

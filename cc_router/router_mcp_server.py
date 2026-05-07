@@ -70,7 +70,9 @@ class RouterMCPBridge:
 
     def __init__(self) -> None:
         self._task_context: dict[str, dict[str, str]] = {}
-        self._tools: dict[str, Callable[[dict[str, Any], dict[str, str]], Awaitable[dict[str, Any]]]] = {
+        self._tools: dict[
+            str, Callable[[dict[str, Any], dict[str, str]], Awaitable[dict[str, Any]]]
+        ] = {
             "feishu_notify": self._feishu_notify,
             "forward_to_agent": self._forward_to_agent,
             "read_training_log": self._read_training_log,
@@ -208,11 +210,13 @@ class RouterMCPBridge:
                     try:
                         with open(filepath, "r") as f:
                             content = f.read(20000)
-                        found_files.append({
-                            "path": filepath,
-                            "size": os.path.getsize(filepath),
-                            "content_preview": content[:2000],
-                        })
+                        found_files.append(
+                            {
+                                "path": filepath,
+                                "size": os.path.getsize(filepath),
+                                "content_preview": content[:2000],
+                            }
+                        )
                     except (IOError, OSError) as exc:
                         found_files.append({"path": filepath, "error": str(exc)})
 

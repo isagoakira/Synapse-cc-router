@@ -42,31 +42,21 @@ logger = logging.getLogger(__name__)
 class SubmitTaskInput(BaseModel):
     """Input model for :func:`synapse_submit_task`."""
 
-    task: str = Field(
-        ..., description="Task description or message to process"
-    )
-    tag: Optional[str] = Field(
-        None, description="Optional routing tag (e.g. 'starfire', 'ml')"
-    )
+    task: str = Field(..., description="Task description or message to process")
+    tag: Optional[str] = Field(None, description="Optional routing tag (e.g. 'starfire', 'ml')")
     capability: Optional[list[str]] = Field(
         None,
         description="Optional capability requirements (e.g. ['code', 'research'])",
     )
-    timeout: float = Field(
-        300.0, description="Task timeout in seconds (default: 300)"
-    )
-    agent_id: str = Field(
-        "mcp-client", description="Caller agent ID (default: 'mcp-client')"
-    )
+    timeout: float = Field(300.0, description="Task timeout in seconds (default: 300)")
+    agent_id: str = Field("mcp-client", description="Caller agent ID (default: 'mcp-client')")
 
 
 class RegisterCCInput(BaseModel):
     """Input model for :func:`synapse_register_cc`."""
 
     cc_id: str = Field(..., description="Unique identifier for this CC instance")
-    workspace: str = Field(
-        ..., description="Absolute path to the workspace directory"
-    )
+    workspace: str = Field(..., description="Absolute path to the workspace directory")
     tags: Optional[list[str]] = Field(
         None, description="Optional routing tags (e.g. ['paper', 'ml'])"
     )
@@ -283,10 +273,12 @@ async def synapse_submit_task(ctx: Context, input: SubmitTaskInput) -> str:
         raise ValueError(str(e)) from e
 
     await ctx.info(f"Task submitted: {task_id}")
-    return _ok({
-        "task_id": task_id,
-        "message": f"Task submitted (id: {task_id})",
-    })
+    return _ok(
+        {
+            "task_id": task_id,
+            "message": f"Task submitted (id: {task_id})",
+        }
+    )
 
 
 # ── Tool: synapse_register_cc ─────────────────────────────────────────
@@ -348,10 +340,12 @@ async def synapse_register_cc(ctx: Context, input: RegisterCCInput) -> str:
         raise ValueError(str(e)) from e
 
     await ctx.info(f"CC instance registered: {registered_id}")
-    return _ok({
-        "cc_id": registered_id,
-        "message": f"CC instance '{registered_id}' registered",
-    })
+    return _ok(
+        {
+            "cc_id": registered_id,
+            "message": f"CC instance '{registered_id}' registered",
+        }
+    )
 
 
 # ── Tool: synapse_list_cc_instances ───────────────────────────────────
@@ -395,10 +389,12 @@ async def synapse_list_cc_instances(ctx: Context, input: ListCCInput) -> str:
     else:
         instances = hub.cc_registry.list_all()
 
-    return _ok({
-        "count": len(instances),
-        "instances": [_format_cc_instance(inst) for inst in instances],
-    })
+    return _ok(
+        {
+            "count": len(instances),
+            "instances": [_format_cc_instance(inst) for inst in instances],
+        }
+    )
 
 
 # ── Tool: synapse_list_agents ─────────────────────────────────────────
@@ -437,10 +433,12 @@ async def synapse_list_agents(ctx: Context, input: None = None) -> str:
     """
     hub = ctx.request_context.lifespan_context["hub"]
     agents = hub.registry.list_all_sync()
-    return _ok({
-        "count": len(agents),
-        "agents": [_format_agent_node(a) for a in agents],
-    })
+    return _ok(
+        {
+            "count": len(agents),
+            "agents": [_format_agent_node(a) for a in agents],
+        }
+    )
 
 
 # ── Tool: synapse_hub_status ──────────────────────────────────────────
@@ -500,21 +498,23 @@ async def synapse_hub_status(ctx: Context, input: None = None) -> str:
         if t.status in task_counts:
             task_counts[t.status] += 1
 
-    return _ok({
-        "version": __version__,
-        "agents": {
-            "count": len(agents),
-            "ids": [a.agent_id for a in agents],
-        },
-        "cc_instances": {
-            "count": len(cc_instances),
-            "by_status": status_counts,
-        },
-        "tasks": {
-            "count": len(tasks),
-            **task_counts,
-        },
-    })
+    return _ok(
+        {
+            "version": __version__,
+            "agents": {
+                "count": len(agents),
+                "ids": [a.agent_id for a in agents],
+            },
+            "cc_instances": {
+                "count": len(cc_instances),
+                "by_status": status_counts,
+            },
+            "tasks": {
+                "count": len(tasks),
+                **task_counts,
+            },
+        }
+    )
 
 
 # ── Tool: synapse_connect_agent ───────────────────────────────────────
@@ -569,10 +569,12 @@ async def synapse_connect_agent(ctx: Context, input: ConnectAgentInput) -> str:
     hub.connect_agent(input.agent_id, bridge)
 
     await ctx.info(f"Agent connected: {input.agent_id} ({input.type})")
-    return _ok({
-        "agent_id": input.agent_id,
-        "message": f"Agent '{input.agent_id}' connected via {input.type}",
-    })
+    return _ok(
+        {
+            "agent_id": input.agent_id,
+            "message": f"Agent '{input.agent_id}' connected via {input.type}",
+        }
+    )
 
 
 # ── Tool: synapse_disconnect_agent ────────────────────────────────────
@@ -618,16 +620,20 @@ async def synapse_disconnect_agent(ctx: Context, input: DisconnectAgentInput) ->
     hub = ctx.request_context.lifespan_context["hub"]
 
     if hub.registry.get_sync(input.agent_id) is None:
-        return _ok({
-            "message": f"Agent '{input.agent_id}' not found (already disconnected)",
-        })
+        return _ok(
+            {
+                "message": f"Agent '{input.agent_id}' not found (already disconnected)",
+            }
+        )
 
     hub.disconnect_agent(input.agent_id)
     await ctx.info(f"Agent disconnected: {input.agent_id}")
-    return _ok({
-        "agent_id": input.agent_id,
-        "message": f"Agent '{input.agent_id}' disconnected",
-    })
+    return _ok(
+        {
+            "agent_id": input.agent_id,
+            "message": f"Agent '{input.agent_id}' disconnected",
+        }
+    )
 
 
 # ── Backward-compatible wrapper ───────────────────────────────────────
