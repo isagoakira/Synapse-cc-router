@@ -23,6 +23,9 @@ from cc_router.config import (
     get_timeout,
     get_hub_endpoint,
     get_bypass_permission,
+    get_health_check_interval,
+    get_max_concurrent,
+    get_max_consecutive_failures,
 )
 from cc_router.exceptions import (
     RouterError,
@@ -43,9 +46,10 @@ from cc_router.hermes_executor import HermesExecutor, HermesResult
 from cc_router.openclaw_executor import OpenClawExecutor, OpenClawResult
 from cc_router.router_mcp_server import (
     RouterMCPBridge,
-    set_task_context,
-    get_task_context,
-    clear_task_context,
+    FeishuNotifyInput,
+    ForwardToAgentInput,
+    ReadTrainingLogInput,
+    QueryExperimentDataInput,
 )
 
 
@@ -100,6 +104,15 @@ class TestConfig:
         c2 = get_config()
         assert c1 == c2
         assert c1 is not c2  # Different objects
+
+    def test_health_check_config_defaults(self):
+        """Health check config defaults are set."""
+        assert get_health_check_interval() == 30.0
+        assert get_max_consecutive_failures() == 3
+
+    def test_max_concurrent_default(self):
+        """Max concurrent default is 5."""
+        assert get_max_concurrent() == 5
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -331,6 +344,24 @@ class TestCCAdapter:
         adapter = CCAdapter(cc_id="test", workspace="/tmp")
         assert adapter.capabilities == ["general"]
 
+    @pytest.mark.asyncio
+    async def test_health_check_idle(self):
+        """health_check returns healthy for idle instance."""
+        adapter = CCAdapter(cc_id="health_test", workspace="/tmp")
+        result = await adapter.health_check()
+        assert result["cc_id"] == "health_test"
+        assert result["status"] == "idle"
+        assert result["process_alive"] is True
+
+    @pytest.mark.asyncio
+    async def test_health_check_after_terminate(self):
+        """health_check reflects dead status after terminate."""
+        adapter = CCAdapter(cc_id="health_term", workspace="/tmp")
+        await adapter.terminate()
+        result = await adapter.health_check()
+        assert result["status"] == "dead"
+        assert result["has_session"] is False
+
     def test_ccresult_dataclass(self):
         r = CCResult(kind="SUCCESS", text="hello", session_id="s1", cost_usd=0.01, duration_ms=1000)
         assert r.kind == "SUCCESS"
@@ -463,6 +494,124 @@ class TestHub:
         h2 = get_global_hub()
         assert h1 is h2
 
+    # ── Hub: Health Monitoring ───────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_health_monitor_start_stop(self):
+        """Health monitor can be started and stopped."""
+        hub = UniversalRouterHub()
+        assert hub._health_task is None
+        hub.start_health_monitor()
+        assert hub._health_task is not None
+        assert not hub._health_task.done()
+        hub.stop_health_monitor()
+        await asyncio.sleep(0.1)
+
+    @pytest.mark.asyncio
+    async def test_queue_processor_start_stop(self):
+        """Queue processor can be started and stopped."""
+        hub = UniversalRouterHub()
+        assert hub._queue_processor_task is None
+        hub.start_queue_processor()
+        assert hub._queue_processor_task is not None
+        hub.stop_queue_processor()
+
+    @pytest.mark.asyncio
+    async def test_background_tasks_start_stop(self):
+        """All background tasks start and stop together."""
+        hub = UniversalRouterHub()
+        hub.start_background_tasks()
+        assert hub._health_task is not None
+        assert hub._queue_processor_task is not None
+        hub.stop_background_tasks()
+
+    # ── Hub: Capacity Management ─────────────────────────────────
+
+    def test_max_concurrent_property(self):
+        """max_concurrent property get/set works."""
+        hub = UniversalRouterHub()
+        assert hub.max_concurrent == 5
+        hub.max_concurrent = 3
+        assert hub.max_concurrent == 3
+
+    def test_max_concurrent_min_one(self):
+        """max_concurrent cannot be set below 1."""
+        hub = UniversalRouterHub()
+        hub.max_concurrent = 0
+        assert hub.max_concurrent == 1
+
+    def test_active_and_queued_counts_initial(self):
+        """Active and queued task counts start at 0."""
+        hub = UniversalRouterHub()
+        assert hub.active_task_count == 0
+        assert hub.queued_task_count == 0
+
+    # ── Hub: Health Summary ──────────────────────────────────────
+
+    def test_get_health_summary(self):
+        """get_health_summary returns the expected structure."""
+        hub = UniversalRouterHub()
+        cc = CCAdapter(cc_id="sum_cc", workspace="/tmp", tags=["test"])
+        hub.register_cc(cc)
+
+        summary = hub.get_health_summary()
+
+        assert summary["cc_instances"]["count"] == 1
+        assert "by_status" in summary["cc_instances"]
+        assert summary["cc_instances"]["details"][0]["cc_id"] == "sum_cc"
+        assert "capacity" in summary
+        assert summary["capacity"]["max_concurrent"] == 5
+        assert summary["capacity"]["active"] == 0
+        assert summary["capacity"]["queued"] == 0
+        assert summary["capacity"]["available_slots"] == 5
+        assert "monitoring" in summary
+        assert summary["monitoring"]["health_interval"] == 30.0
+        assert summary["monitoring"]["max_failures"] == 3
+
+    def test_get_health_summary_empty(self):
+        """get_health_summary handles empty Hub gracefully."""
+        hub = UniversalRouterHub()
+        summary = hub.get_health_summary()
+        assert summary["cc_instances"]["count"] == 0
+        assert summary["tasks"]["count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_health_check_cycle(self):
+        """_health_check_cycle runs without error on empty registry."""
+        hub = UniversalRouterHub()
+        await hub._health_check_cycle()  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_submit_task_queues_when_at_capacity(self):
+        """submit_task queues when active count equals max_concurrent."""
+        hub = UniversalRouterHub()
+        hub.max_concurrent = 1
+        cc = CCAdapter(cc_id="cap_cc", workspace="/tmp", tags=["cap"])
+        hub.register_cc(cc)
+        agent = AgentAdapterImpl("cap_agent")
+        hub.connect_agent(agent.agent_id, agent)
+
+        # First task starts immediately
+        task_id_1 = await hub.submit_task(
+            "cap_agent", "task one", tag="cap", timeout=3.0
+        )
+        await asyncio.sleep(0.2)
+
+        # Manually set active count to max
+        async with hub._capacity_lock:
+            hub._active_task_count = 1
+
+        # Second task should be queued
+        task_id_2 = await hub.submit_task(
+            "cap_agent", "task two", tag="cap", timeout=3.0
+        )
+        task_2 = hub.get_task(task_id_2)
+        assert task_2.status == "queued"
+
+        # Reset
+        async with hub._capacity_lock:
+            hub._active_task_count = 0
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # AgentAdapter Tests
@@ -504,6 +653,11 @@ class TestCCExecutor:
     def test_create_executor(self):
         executor = CCExecutor(cc_cli_path="/mock/claude")
         assert executor is not None
+
+    def test_is_process_alive_no_process(self):
+        """is_process_alive returns False when no process has started."""
+        executor = CCExecutor(cc_cli_path="/mock/claude")
+        assert executor.is_process_alive() is False
 
     @pytest.mark.asyncio
     async def test_executor_missing_cli(self):
@@ -605,12 +759,116 @@ class TestMCPBridge:
         assert result["status"] == "ok"
 
     def test_task_context(self):
-        set_task_context("task_ctx_1", "cc_ctx", "agent_ctx")
-        ctx = get_task_context("task_ctx_1")
+        bridge = RouterMCPBridge()
+        bridge.set_task_context("task_ctx_1", "cc_ctx", "agent_ctx")
+        ctx = bridge.get_task_context("task_ctx_1")
         assert ctx["cc_id"] == "cc_ctx"
         assert ctx["agent_id"] == "agent_ctx"
-        clear_task_context("task_ctx_1")
-        assert get_task_context("task_ctx_1") == {}
+        bridge.clear_task_context("task_ctx_1")
+        assert bridge.get_task_context("task_ctx_1") == {}
+
+    # ── Pydantic Model Tests ───────────────────────────────────────
+
+    def test_feishu_notify_input(self):
+        m = FeishuNotifyInput(text="hello")
+        assert m.text == "hello"
+        assert m.chat_id is None
+
+    def test_feishu_notify_input_with_chat_id(self):
+        m = FeishuNotifyInput(text="hello", chat_id="chat_123")
+        assert m.chat_id == "chat_123"
+
+    def test_feishu_notify_input_rejects_empty_text(self):
+        with pytest.raises(ValueError):  # Pydantic ValidationError is a subclass
+            FeishuNotifyInput(text="")
+
+    def test_forward_to_agent_input(self):
+        m = ForwardToAgentInput(content="test", task_id="t1")
+        assert m.content == "test"
+        assert m.task_id == "t1"
+        assert m.event_type == "partial"
+
+    def test_forward_to_agent_input_requires_content_and_task_id(self):
+        with pytest.raises(ValueError):
+            ForwardToAgentInput(content="")
+        with pytest.raises(ValueError):
+            ForwardToAgentInput(task_id="")
+
+    def test_read_training_log_input(self):
+        m = ReadTrainingLogInput(workspace="/tmp")
+        assert m.workspace == "/tmp"
+        assert m.pattern == "*.log"
+
+    def test_query_experiment_data_input(self):
+        m = QueryExperimentDataInput(experiment="exp1")
+        assert m.experiment == "exp1"
+        assert m.metric is None
+
+    def test_query_experiment_data_input_with_metric(self):
+        m = QueryExperimentDataInput(experiment="exp1", metric="accuracy")
+        assert m.metric == "accuracy"
+
+    def test_query_experiment_data_input_rejects_empty(self):
+        with pytest.raises(ValueError):
+            QueryExperimentDataInput(experiment="")
+
+    # ── Edge Case Tests ────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_feishu_notify_empty_text_raises(self):
+        bridge = RouterMCPBridge()
+        with pytest.raises(ValueError):
+            await bridge.call_tool("feishu_notify", {"text": ""})
+
+    @pytest.mark.asyncio
+    async def test_read_training_log_nonexistent_workspace(self):
+        bridge = RouterMCPBridge()
+        result = await bridge.call_tool(
+            "read_training_log", {"workspace": "/nonexistent_path_xyz", "pattern": "*.log"}
+        )
+        assert result["status"] == "ok"
+        assert len(result.get("logs", [])) == 0
+
+    @pytest.mark.asyncio
+    async def test_forward_to_agent_missing_context(self):
+        """forward_to_agent should not crash when context has no agent_id."""
+        bridge = RouterMCPBridge()
+        result = await bridge.call_tool(
+            "forward_to_agent",
+            {"event_type": "log", "content": "test", "task_id": "no_ctx_task"},
+        )
+        assert result["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_query_experiment_data_nonexistent(self):
+        """query_experiment_data returns empty results for unknown experiment."""
+        bridge = RouterMCPBridge()
+        result = await bridge.call_tool(
+            "query_experiment_data", {"experiment": "nonexistent_experiment_xyz"}
+        )
+        assert result["status"] == "ok"
+        assert result.get("count") == 0
+
+    @pytest.mark.asyncio
+    async def test_forward_to_agent_with_task_context(self):
+        """forward_to_agent uses task context to find agent_id."""
+        bridge = RouterMCPBridge()
+        bridge.set_task_context("ctx_task_1", "cc_test", "agent_test")
+        result = await bridge.call_tool(
+            "forward_to_agent",
+            {"event_type": "result", "content": "done", "task_id": "ctx_task_1"},
+            context={"task_id": "ctx_task_1"},
+        )
+        assert result["status"] == "ok"
+        bridge.clear_task_context("ctx_task_1")
+
+    def test_context_isolated_between_bridges(self):
+        """Each bridge instance should have its own task context."""
+        b1 = RouterMCPBridge()
+        b2 = RouterMCPBridge()
+        b1.set_task_context("t1", "cc1", "agent1")
+        assert b2.get_task_context("t1") == {}
+        assert b1.get_task_context("t1")["cc_id"] == "cc1"
 
 
 # ═══════════════════════════════════════════════════════════════════════

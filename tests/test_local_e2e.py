@@ -38,7 +38,7 @@ from cc_router import (
 )
 from cc_router.agent_adapter import AgentAdapterImpl
 from cc_router.cc_executor import CCExecutor
-from cc_router.router_mcp_server import RouterMCPBridge, set_task_context, clear_task_context
+from cc_router.router_mcp_server import RouterMCPBridge
 
 
 # ── Configuration ──────────────────────────────────────────────────
@@ -370,7 +370,7 @@ async def test_mcp_bridge():
     check("feishu_notify returns status=ok", r.get("status") == "ok")
 
     # Call forward_to_agent with context
-    set_task_context("test_task_mcp", "cc_test", "agent_mcp_test")
+    bridge.set_task_context("test_task_mcp", "cc_test", "agent_mcp_test")
     r = await bridge.call_tool(
         "forward_to_agent",
         {
@@ -381,7 +381,7 @@ async def test_mcp_bridge():
         context={"task_id": "test_task_mcp"},
     )
     check("forward_to_agent returns status=ok", r.get("status") == "ok")
-    clear_task_context("test_task_mcp")
+    bridge.clear_task_context("test_task_mcp")
 
     # Call read_training_log
     r = await bridge.call_tool("read_training_log", {"workspace": "/tmp", "pattern": "*.log"})

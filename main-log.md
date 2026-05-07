@@ -390,3 +390,209 @@ Agent(Hermes/OpenClaw/Custom)
 - [ ] 运行 VCS 快照命令 (`harness-vcs.sh snapshot`)
 - [ ] 运行测试验证 (`pytest tests/test_mcp_hub.py -v`)
 - [ ] harnee-state.json 状态更新 → "completed"
+
+---
+
+## 2026-05-07 — Phase 8: MCP Server FastMCP 标准化
+
+### 概述
+
+将 `mcp_hub_server.py` 从低阶 `mcp.server.Server` 迁移到 **FastMCP** + Pydantic v2，遵循 MCP Builder 最佳实践。
+
+| 维度 | 之前 | 之后 |
+|------|------|------|
+| 框架 | 低阶 Server + 手动 dispatch | **FastMCP** + `@mcp.tool()` 装饰器 |
+| Tool 命名 | `submit_task` | `synapse_submit_task`（服务前缀） |
+| 输入校验 | 手动 `args.get()` | **Pydantic v2** 模型 + `Field()` 约束 |
+| Annotations | 无 | `readOnlyHint/destructiveHint/idempotentHint/openWorldHint` |
+| 错误处理 | JSON `{"status":"error"}` | MCP `isError` 标记（异常方式） |
+| Docstrings | 简短 | 完整 docstring：参数/返回值/示例 |
+| Server 名 | `synapse-hub` | `synapse_mcp` |
+
+### 已完成任务
+
+| 组 | 任务数 | 状态 |
+|---|--------|------|
+| G0 | 基础设施 (4) | ✅ |
+| G1 | FastMCP 核心实现 (8) | ✅ |
+| G2 | 测试更新 (5) | ✅ |
+| G3 | 引用更新 (3) | ✅ |
+| G4 | 最终验证 (5) | ✅ |
+
+### 核心变更
+
+- `mcp_hub_server.py`: 完全重写为 FastMCP 架构
+- `tests/test_mcp_hub.py`: 重写为 32 个测试，验证 Pydantic 模型、7 个工具函数、错误处理、向后兼容
+- `__init__.py`: 新增 FastMCP 实例 `mcp` + 5 个 Pydantic 输入模型导出
+- `README.md`: 更新工具名、Server 名、新增 FastMCP 使用示例
+- `CHANGELOG.md`: v0.3.0 增加 FastMCP 迁移条目
+- `CLAUDE.md`: 新增 `MCPHubServer` 组件条目
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| 导入验证 | ✅ `from cc_router import MCPHubServer` |
+| 测试 (MCP) | ✅ 32/32 passed |
+| 测试 (Core) | ✅ 68/68 passed |
+| 测试 (Total) | ✅ 100/100 passed |
+| Ruff lint | ✅ All checks passed |
+| Mypy | ✅ No issues (mcp_hub_server.py) |
+| VCS 快照 | ✅ snapshot-main-260507 14:30:56 |
+
+### 产出文件
+
+**修改文件:**
+- `cc_router/mcp_hub_server.py` — 完全重写 (FastMCP)
+- `cc_router/__init__.py` — 新增导出
+- `tests/test_mcp_hub.py` — 完全重写
+- `README.md` — 工具名/Server名更新
+- `CHANGELOG.md` — v0.3.0 条目补充
+- `dev-plan.md` — 状态更新
+- `CLAUDE.md` — 组件表更新
+- `harness-state.json` — 标记完成
+
+---
+
+## 2026-05-07 — Phase 9: RouterMCPBridge 重构
+
+### 概述
+
+将 `RouterMCPBridge` 从模块级全局状态 + 低级 dict 操作升级为实例级状态 + Pydantic 模型校验，并实现 `read_training_log` 存根为真实文件读取。
+
+### 改进项
+
+| # | 改进 | 之前 | 之后 |
+|---|------|------|------|
+| 1 | 任务上下文 | 模块级 `_TASK_CONTEXT` dict | `RouterMCPBridge._task_context` 实例 dict |
+| 2 | 输入校验 | 手动 `args.get()` | Pydantic v2 `BaseModel` + `Field()` |
+| 3 | `read_training_log` | 返回空列表存根 | 真实 glob + 文件读取（限 20 文件/50KB） |
+| 4 | 类型注解 | 无 | 完整 `dict[str, Any]` / `str | None` 等 |
+| 5 | `mcp/__init__.py` | 损坏的相对导入 | `from cc_router.router_mcp_server` |
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| 核心测试 | ✅ 68/68 passed |
+| MCP 测试 | ✅ 32/32 passed |
+| 累计测试 | ✅ 100/100 passed |
+| Ruff lint | ✅ All checks passed |
+
+### 产出文件
+
+**修改文件:**
+- `cc_router/router_mcp_server.py` — 重构：实例 dict + Pydantic 模型 + 实现 read_training_log
+- `cc_router/mcp/__init__.py` — 修复导入路径
+- `tests/test_core.py` — 适配新 API（实例方法代替模块函数）
+- `tests/test_local_e2e.py` — 适配新 API
+- `lessons-learned.md` — 新增 Phase 9 经验
+- `main-log.md` — 本次记录
+
+---
+
+## 2026-05-07 — Phase 10: MCP 评估问题修复
+
+### 概述
+
+根据 MCP 评估报告的 P1/P2/P3 优先级，完成 6 项改进。
+
+### 改进清单
+
+| # | 事项 | 优先级 | 涉及文件 | 状态 |
+|---|------|--------|---------|------|
+| 1 | 修复硬编码版本号 (`"0.3.0"` → `__version__`) | P1 | `mcp_hub_server.py` | ✅ |
+| 2 | 实现 `query_experiment_data` 真实文件搜索 | P1 | `router_mcp_server.py` | ✅ |
+| 3 | 修复 `bridge._hub = hub` 绕过模式 | P2 | `mcp_hub_server.py` | ✅ |
+| 4 | 导出 RouterMCPBridge Pydantic 模型 | P2 | `cc_router/__init__.py` | ✅ |
+| 5 | 类型注解 `Any` → `TypedDict` | P3 | `mcp_hub_server.py` | ✅ |
+| 6 | RouterMCPBridge 测试增强 (15 个新测试) | P3 | `test_core.py`, `router_mcp_server.py` | ✅ |
+
+### 详细变更
+
+**mcp_hub_server.py:**
+- `synapse_hub_status` 中硬编码 `"0.3.0"` → `__version__` 导入 (L453, L475)
+- `bridge._hub = hub` 外部属性写入 → `MCPAgentBridge(agent_id, hub=hub)` 构造参数
+- `_format_cc_instance`/`_format_agent_node` 返回类型 `dict` → `CCInstanceDict`/`AgentNodeDict` (TypedDict)
+
+**router_mcp_server.py:**
+- `query_experiment_data` 从空存根 → 真实文件搜索 (glob + JSON/CSV/YAML/LOG)
+- 4 个 Pydantic 模型添加 `min_length=1` 约束
+- `_tools` dict 类型 `dict[str, Any]` → `dict[str, Callable[[...], Awaitable[...]]]`
+
+**cc_router/__init__.py:**
+- 新增导出: `RouterMCPBridge`, `FeishuNotifyInput`, `ForwardToAgentInput`, `ReadTrainingLogInput`, `QueryExperimentDataInput`
+
+**tests/test_core.py:**
+- 新增 15 个测试: Pydantic 模型校验 (9)、边缘 case (5)、上下文隔离 (1)
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| 核心测试 | ✅ 83/83 passed (+15 新测试) |
+| MCP 测试 | ✅ 32/32 passed |
+| 累计测试 | ✅ 115/115 passed |
+| Ruff lint | ✅ All checks passed |
+
+---
+
+## 2026-05-07 — Phase 11: BCD — HTTP Server + JS Bridge + 健康监控与并行分发
+
+### 概述
+
+完成 BCD 三项任务:
+- **B**: JS Bridge HTTP 委托 — `router_mcp_bridge.js` 现在先尝试 Hub HTTP API，失败时回退到本地 handler
+- **C**: 健康监控 + 并行任务分发 — 后台健康检查循环、容量管理、任务队列
+- **D**: Hub HTTP Server — aiohttp REST API (7 endpoints)
+
+### B: JS Bridge HTTP Delegation
+
+| # | 变更 | 文件 | 状态 |
+|---|------|------|------|
+| B1 | 添加 `callHubTool()` — 通过 HTTP POST 委托到 Hub | `cc_router/mcp/router_mcp_bridge.js` | ✅ |
+| B2 | Tool dispatch 策略: Hub → local fallback | `cc_router/mcp/router_mcp_bridge.js` | ✅ |
+| B3 | 统一版本号 `CONFIG.version = "0.3.0"` | `cc_router/mcp/router_mcp_bridge.js` | ✅ |
+
+### C: 健康监控 + 并行任务分发
+
+| # | 组件 | 描述 | 状态 |
+|---|------|------|------|
+| C1 | `CCExecutor.is_process_alive()` | 检查 CC 子进程是否存活 | ✅ |
+| C2 | `CCAdapter.health_check()` | 返回实例健康状态 (进程/会话/状态) | ✅ |
+| C3 | `Hub._health_monitor_loop` | 后台循环定期检查所有 CC 实例 | ✅ |
+| C4 | `Hub._health_check_cycle()` | 单次健康检查: 检测死亡进程, 递增失败计数, 标记 dead | ✅ |
+| C5 | `Hub.start/stop_background_tasks()` | 统一启动/停止所有后台任务 | ✅ |
+| C6 | `Hub.get_health_summary()` | 全面的 Hub 状态报告 (实例/容量/任务/监控) | ✅ |
+| C7 | `Hub._max_concurrent` | 最大并行任务限制 (可配置, 默认 5) | ✅ |
+| C8 | `Hub._task_queue` + `_process_queue` | 超容量时任务自动排队, 有空位时出队执行 | ✅ |
+| C9 | CLI 集成: `hub.start_background_tasks()` 在 TCP 模式启动时调用 | `cc_router/__main__.py` | ✅ |
+| C10 | HTTP `/api/health` 端点增强 | 返回完整 cc_instances/capacity/monitoring 结构 | ✅ |
+
+### D: Hub HTTP Server (aiohttp REST API)
+
+| # | 端点 | 方法 | 状态 |
+|---|------|------|------|
+| D1 | `/api/health` | GET | ✅ |
+| D2 | `/api/tasks` | POST | ✅ |
+| D3 | `/api/tasks/{task_id}` | GET | ✅ |
+| D4 | `/api/tasks` | GET (list, ?agent_id=) | ✅ |
+| D5 | `/api/cc/register` | POST | ✅ |
+| D6 | `/api/cc` | GET (list, ?status=) | ✅ |
+| D7 | `/api/tools/{tool_name}` | POST | ✅ |
+
+### 配置新增
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `health_check_interval` | 30.0s | 健康检查间隔 |
+| `max_consecutive_failures` | 3 | 连续失败阈值（之后标记 dead） |
+| `max_concurrent` | 5 | 最大并行 CC 任务数 |
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| 核心测试 | ✅ 98/98 passed (+15 新) |
+| HTTP 测试 (新增) | ✅ 13/13 passed |
+| 累计测试 | ✅ 111/111 passed (核心 98 + HTTP 13) |

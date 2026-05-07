@@ -114,12 +114,20 @@ async def async_main(args: argparse.Namespace) -> None:
         return
 
     # Get global hub instance (TCP mode)
-    get_global_hub()
-    logger.info(
-        "CC Router Hub starting on %s:%d",
-        config.get("hub_host", "localhost"),
-        config.get("hub_port", 8765),
-    )
+    hub = get_global_hub()
+    host = config.get("hub_host", "localhost")
+    port = config.get("hub_port", 8765)
+    logger.info("CC Router Hub starting on %s:%d", host, port)
+
+    # Start background tasks (health monitor + queue processor)
+    hub.start_background_tasks()
+    logger.info("Background tasks started (health monitor, queue processor)")
+
+    # Start HTTP server as background task
+    logger.info("Starting HTTP server on %s:%d", host, port)
+    from .http_server import run_http_server
+
+    http_task = asyncio.create_task(run_http_server(host, port))
 
     # Register signal handlers
     signal.signal(signal.SIGINT, _handle_signal)
@@ -133,7 +141,12 @@ async def async_main(args: argparse.Namespace) -> None:
         pass
     finally:
         logger.info("Hub shutting down...")
-        # Cleanup could go here
+        hub.stop_background_tasks()
+        http_task.cancel()
+        try:
+            await http_task
+        except asyncio.CancelledError:
+            pass
         logger.info("Hub stopped")
 
 

@@ -2,7 +2,7 @@
 CC Router - Universal Multi-Agent ↔ Multi-CC Connection Hub
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .config import (
     BYPASS_PERMISSION,
@@ -33,7 +33,28 @@ from .agent_registry import AgentRegistry
 from .cc_registry import CCRegistry
 from .router_hub import UniversalRouterHub, get_global_hub
 from .universal_router import RoutingStrategy
-from .mcp_hub_server import MCPHubServer, MCPAgentBridge, run_server as run_mcp_server
+from .mcp_hub_server import (
+    # FastMCP instance
+    mcp,
+    # Backward-compatible wrapper
+    MCPHubServer,
+    MCPAgentBridge,
+    # Convenience launcher
+    run_server as run_mcp_server,
+    # Pydantic input models
+    SubmitTaskInput,
+    RegisterCCInput,
+    ListCCInput,
+    ConnectAgentInput,
+    DisconnectAgentInput,
+)
+from .router_mcp_server import (
+    RouterMCPBridge,
+    FeishuNotifyInput,
+    ForwardToAgentInput,
+    ReadTrainingLogInput,
+    QueryExperimentDataInput,
+)
 
 __all__ = [
     # Config
@@ -74,4 +95,17 @@ __all__ = [
     "MCPHubServer",
     "MCPAgentBridge",
     "run_mcp_server",
+    "mcp",
+    # Pydantic input models
+    "SubmitTaskInput",
+    "RegisterCCInput",
+    "ListCCInput",
+    "ConnectAgentInput",
+    "DisconnectAgentInput",
+    # RouterMCPBridge
+    "RouterMCPBridge",
+    "FeishuNotifyInput",
+    "ForwardToAgentInput",
+    "ReadTrainingLogInput",
+    "QueryExperimentDataInput",
 ]

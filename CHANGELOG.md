@@ -13,12 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MCPAgentBridge` — minimal AgentAdapter for MCP-connected agents
 - `--mcp` CLI flag to run as MCP Server (stdio transport) instead of TCP Hub
 - MCP configuration: `mcp_enabled`, `mcp_server_name` in config system
-- `tests/test_mcp_hub.py` — 25+ tests for MCP Hub Server with mocked Hub
+- `tests/test_mcp_hub.py` — 32 tests for FastMCP-based Hub Server with mocked Hub
 - README "MCP Integration" section with Claude Desktop setup instructions
 - `cc_router_config.template.json` updated with MCP config fields
 
 ### Changed
-- `__init__.py`: exports `MCPHubServer`, `MCPAgentBridge`, `run_mcp_server`
+- **MCP Server migrated to FastMCP**: low-level `mcp.server.Server` replaced with `FastMCP("synapse_mcp")` + `@mcp.tool()` decorators
+- **Tool naming**: all 7 tools prefixed with `synapse_` (e.g. `submit_task` → `synapse_submit_task`)
+- **Input validation**: manual `args.get()` replaced with Pydantic v2 models (`SubmitTaskInput`, `RegisterCCInput`, etc.)
+- **Error handling**: JSON `{"status":"error"}` replaced with MCP `isError` flag via exception raising
+- **Lifespan management**: Hub initialization moved to FastMCP lifespan context manager
+- **Context injection**: `ctx: Context` parameter provides logging + lifespan access to all tools
+- **Tool annotations**: all tools annotated with `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`
+- **Server name**: `synapse-hub` → `synapse_mcp`
+- `__init__.py`: exports `MCPHubServer`, `MCPAgentBridge`, `run_mcp_server`, `mcp` FastMCP instance, and 5 Pydantic input models
 - `config.py`: added `MCP_ENABLED` and `MCP_SERVER_NAME` defaults
 - `__main__.py`: MCP mode dispatched before TCP Hub startup
 - Project structure in README updated to include `mcp_hub_server.py`

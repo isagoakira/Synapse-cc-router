@@ -219,6 +219,12 @@ class CCExecutor:
             duration_ms=int(elapsed * 1000),
         )
 
+    def is_process_alive(self) -> bool:
+        """Check if the CC process is still running."""
+        if self._process is None:
+            return False
+        return self._process.returncode is None
+
     async def kill(self) -> None:
         """Kill the running CC process."""
         if self._process:

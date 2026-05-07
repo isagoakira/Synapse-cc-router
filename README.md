@@ -314,7 +314,7 @@ Add this to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "synapse-hub": {
+    "synapse_mcp": {
       "command": "cc-router",
       "args": ["--mcp"]
     }
@@ -326,21 +326,54 @@ Add this to your `claude_desktop_config.json`:
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `submit_task` | Submit a task to the Hub for CC processing | `task` |
-| `register_cc` | Register a CC instance with the Hub | `cc_id`, `workspace` |
-| `list_cc_instances` | List registered CC instances | _(optional `status` filter)_ |
-| `list_agents` | List connected agents | _(none)_ |
-| `hub_status` | Hub runtime overview | _(none)_ |
-| `connect_agent` | Connect an external agent | `agent_id` |
-| `disconnect_agent` | Disconnect an agent | `agent_id` |
+| `synapse_submit_task` | Submit a task to the Hub for CC processing | `task` |
+| `synapse_register_cc` | Register a CC instance with the Hub | `cc_id`, `workspace` |
+| `synapse_list_cc_instances` | List registered CC instances | _(optional `status` filter)_ |
+| `synapse_list_agents` | List connected agents | _(none)_ |
+| `synapse_hub_status` | Hub runtime overview | _(none)_ |
+| `synapse_connect_agent` | Connect an external agent | `agent_id` |
+| `synapse_disconnect_agent` | Disconnect an agent | `agent_id` |
 
 ### Programmatic Usage
+
+**Recommended — FastMCP instance (new):**
+
+```python
+from cc_router.mcp_hub_server import mcp
+
+# Start with stdio transport (for Claude Desktop)
+mcp.run(transport="stdio")
+```
+
+**Backward-compatible wrapper:**
 
 ```python
 from cc_router.mcp_hub_server import MCPHubServer
 
 server = MCPHubServer()
 await server.run()
+```
+
+**Using individual tools programmatically:**
+
+```python
+from cc_router.mcp_hub_server import (
+    mcp,
+    SubmitTaskInput,
+    synapse_submit_task,
+)
+import anyio
+
+async def example():
+    # FastMCP auto-validates input via Pydantic models
+    result = await synapse_submit_task(
+        # Context is injected by FastMCP at runtime
+        input=SubmitTaskInput(
+            task="implement sorting algorithm",
+            tag="code",
+        ),
+    )
+    print(result)
 ```
 
 ### CLI Mode
@@ -423,7 +456,7 @@ cc_router/
 ├── openclaw_executor.py # OpenClaw subprocess executor
 ├── router_hub.py        # Main orchestrator
 ├── router_mcp_server.py # MCP tool server
-├── mcp_hub_server.py    # External MCP Server (stdio transport)
+├── mcp_hub_server.py    # FastMCP-based External MCP Server (stdio transport)
 ├── universal_router.py  # Task routing engine
 ├── adapters/            # Built-in agent adapters
 ├── installer/           # Interactive setup wizard

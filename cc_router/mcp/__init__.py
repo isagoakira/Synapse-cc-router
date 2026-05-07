@@ -1,12 +1,9 @@
 """
 MCP module for CC Router.
+
+Provides the RouterMCPBridge for internal CC ↔ Hub communication.
 """
 
-from .router_mcp_server import (
-    RouterMCPBridge,
-    set_task_context,
-    get_task_context,
-    clear_task_context,
-)
+from cc_router.router_mcp_server import RouterMCPBridge
 
-__all__ = ["RouterMCPBridge", "set_task_context", "get_task_context", "clear_task_context"]
+__all__ = ["RouterMCPBridge"]

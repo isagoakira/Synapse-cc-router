@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is **CC Router** — a Universal Multi-Agent ↔ Multi-CC (Claude Code) Connection Hub that enables NxM connections between any LLM Agent and any Claude Code instance, with bidirectional MCP communication and intelligent task routing.
 
-**Current Status**: v0.2.0 (alpha). The core architecture is implemented and tested. 27+ source files, 5+ test files with 44+ pytest tests. Ready for public release preparations.
+**Current Status**: v0.3.0 (alpha). Core architecture implemented and tested with health monitoring, parallel task distribution, HTTP REST API, and MCP bridge. 30+ source files, 111+ pytest tests.
 
 ## Architecture
 
@@ -23,17 +23,19 @@ Agent (Hermes/OpenClaw/Custom)
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `UniversalRouterHub` | `cc_router/router_hub.py` | Main routing hub |
+| `UniversalRouterHub` | `cc_router/router_hub.py` | Main routing hub + health monitor + task queue |
 | `AgentRegistry` | `cc_router/agent_registry.py` | Manages connected agents |
 | `CCRegistry` | `cc_router/cc_registry.py` | Manages CC instances |
-| `CCAdapter` | `cc_router/cc_adapter.py` | Adapter for CC instances |
-| `CCExecutor` | `cc_router/cc_executor.py` | Executes CC CLI via stream-json |
+| `CCAdapter` | `cc_router/cc_adapter.py` | Adapter for CC instances + health check |
+| `CCExecutor` | `cc_router/cc_executor.py` | Executes CC CLI via stream-json + process alive check |
 | `UniversalRouter` | `cc_router/universal_router.py` | Routes tasks by tag/path/capability |
 | `EventBus` | `cc_router/event_bus.py` | Bidirectional async event bus |
 | `AgentAdapter` | `cc_router/agent_adapter.py` | Protocol for agents to connect |
 | `RouterMCPServer` | `cc_router/router_mcp_server.py` | Built-in MCP server |
+| `MCPHubServer` | `cc_router/mcp_hub_server.py` | FastMCP-based external MCP server |
 | `HermesExecutor` | `cc_router/hermes_executor.py` | Hermes subprocess executor |
 | `OpenClawExecutor` | `cc_router/openclaw_executor.py` | OpenClaw subprocess executor |
+| `HTTP Server` | `cc_router/http_server.py` | aiohttp REST API (7 endpoints) |
 | `MCP Bridge` | `cc_router/mcp/router_mcp_bridge.js` | MCP stdio bridge (Node.js) |
 
 ## Routing Strategy
@@ -68,6 +70,33 @@ claude --print \
 - Parse `result.result` from result events, not assistant content
 - CC CLI does not accept `--cwd` — use subprocess `cwd=` parameter
 - stream-json auth failures exit with code 1 and no stdout
+
+## Health Monitoring
+
+The Hub runs a background health monitor that periodically checks CC instances:
+- **Interval**: Configurable via `health_check_interval` (default: 30s)
+- **Failure threshold**: `max_consecutive_failures` (default: 3) before marking as `dead`
+- **Check**: Verifies subprocess is alive for `busy` instances
+- **Statuses**: `idle` > `busy` > `dead` > `starting`
+
+## Parallel Capacity Management
+
+Tasks are queued when all CC instances are busy:
+- **max_concurrent**: Maximum parallel tasks (default: 5, configurable)
+- **Queue**: `asyncio.Queue` processed by background `_process_queue` task
+- **Flow**: Normal (has capacity) → immediate execution; Full → queued; On release → dequeued
+
+## HTTP API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Hub health status (instances/capacity/tasks/monitoring) |
+| `/api/tasks` | POST | Submit a task |
+| `/api/tasks/{id}` | GET | Get task status/result |
+| `/api/tasks` | GET | List tasks (optional `?agent_id=`) |
+| `/api/cc/register` | POST | Register a CC instance |
+| `/api/cc` | GET | List CC instances (optional `?status=`) |
+| `/api/tools/{name}` | POST | Call a RouterMCPBridge tool |
 
 ## Development
 

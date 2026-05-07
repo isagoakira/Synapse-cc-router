@@ -129,6 +129,25 @@ class CCAdapter:
         finally:
             self._current_task = None
 
+    async def health_check(self) -> dict:
+        """
+        Run a health check on this CC instance.
+
+        Returns:
+            dict with keys:
+              - cc_id: str
+              - status: str (idle / busy / dead / starting)
+              - process_alive: bool (whether subprocess is running)
+              - has_session: bool (whether a session_id is stored)
+        """
+        process_alive = self._executor.is_process_alive() if self._status == "busy" else True
+        return {
+            "cc_id": self.cc_id,
+            "status": self._status,
+            "process_alive": process_alive,
+            "has_session": bool(self._session_id),
+        }
+
     async def terminate(self) -> None:
         """Force terminate CC process."""
         self._status = "dead"

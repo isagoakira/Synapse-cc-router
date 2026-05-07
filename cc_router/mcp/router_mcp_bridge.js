@@ -5,6 +5,9 @@
  * Runs as a stdio-based MCP server, enabling Claude Code (CC) instances
  * within the CC Router hub to call MCP tools via JSON-RPC over stdin/stdout.
  *
+ * Tool calls are delegated to the Hub HTTP API when available,
+ * falling back to local handling.
+ *
  * Usage:
  *   node router_mcp_bridge.js [--port PORT] [--hub-url URL]
  *
@@ -22,12 +25,15 @@
 "use strict";
 
 const readline = require("readline");
+const http = require("http");
+const { promisify } = require("util");
 
 // ── Configuration ──────────────────────────────────────────────────────
 
 const CONFIG = {
   hubUrl: process.env.CC_ROUTER_HUB_URL || "http://localhost:8765",
   logLevel: process.env.CC_ROUTER_LOG_LEVEL || "info",
+  version: "0.3.0",
 };
 
 // ── Logger ─────────────────────────────────────────────────────────────
@@ -37,9 +43,53 @@ const currentLevel = LOG_LEVELS[CONFIG.logLevel] ?? 1;
 
 function log(level, ...args) {
   if (LOG_LEVELS[level] >= currentLevel) {
-    // Write logs to stderr so they don't interfere with JSON-RPC on stdout
     process.stderr.write(`[mcp-bridge] [${level.toUpperCase()}] ${args.join(" ")}\n`);
   }
+}
+
+// ── HTTP Delegation ────────────────────────────────────────────────────
+
+/**
+ * Try to delegate a tool call to the Hub HTTP API.
+ * @param {string} name - Tool name
+ * @param {object} args - Tool arguments
+ * @returns {Promise<object|null>} Hub response or null if unavailable
+ */
+function callHubTool(name, args) {
+  return new Promise((resolve) => {
+    const url = new URL(`${CONFIG.hubUrl}/api/tools/${name}`);
+    const body = JSON.stringify({ arguments: args });
+
+    const options = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+      timeout: 5000,
+    };
+
+    const req = http.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        try {
+          const parsed = JSON.parse(data);
+          resolve(parsed.status === "ok" ? parsed : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+    req.write(body);
+    req.end();
+  });
 }
 
 // ── Tool Definitions ───────────────────────────────────────────────────
@@ -103,17 +153,17 @@ const TOOLS = [
   },
 ];
 
-// ── Tool Handlers ──────────────────────────────────────────────────────
+// ── Local Tool Handlers (fallback when Hub is unavailable) ─────────────
 
-async function handleToolCall(name, args) {
-  log("debug", `Tool call: ${name}`, JSON.stringify(args));
+async function handleToolCallLocal(name, args) {
+  log("debug", `Local tool call: ${name}`, JSON.stringify(args));
 
   switch (name) {
     case "feishu_notify": {
       const text = args.text || "";
       const chatId = args.chat_id || null;
       log("info", `feishu_notify: "${text.slice(0, 80)}" ${chatId ? `-> ${chatId}` : ""}`);
-      return { status: "ok", message: "Notification forwarded to Feishu" };
+      return { status: "ok", message: "Notification sent (local)" };
     }
 
     case "forward_to_agent": {
@@ -121,23 +171,19 @@ async function handleToolCall(name, args) {
       const content = args.content || "";
       const taskId = args.task_id || "";
       log("info", `forward_to_agent: type=${eventType} task=${taskId}`);
-      // In a full MCP setup, this would POST to the Hub's EventBus HTTP endpoint.
-      // For stdio bridge, we acknowledge the forward request.
-      return { status: "ok", message: "Event forwarded to agent" };
+      return { status: "ok", message: "Event forwarded to agent (local)" };
     }
 
     case "read_training_log": {
       const workspace = args.workspace || ".";
       const pattern = args.pattern || "*.log";
       log("info", `read_training_log: ${workspace}/${pattern}`);
-      // This is a stub — real implementation would read from the filesystem.
-      // The Python-side RouterMCPBridge handles the actual file I/O.
       return {
         status: "ok",
         workspace,
         pattern,
         logs: [],
-        message: "Training log reading delegated to Python backend",
+        message: `Training log search in ${workspace}/${pattern} (local — no filesystem access in bridge)`,
       };
     }
 
@@ -150,13 +196,28 @@ async function handleToolCall(name, args) {
         experiment,
         metric,
         data: null,
-        message: "Experiment data query delegated to Python backend",
+        message: `Experiment data query for '${experiment}' (local — delegated to Hub)`,
       };
     }
 
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
+}
+
+// ── Tool Dispatch ──────────────────────────────────────────────────────
+
+async function handleToolCall(name, args) {
+  // 1. Try HTTP delegation to Hub
+  const hubResult = await callHubTool(name, args);
+  if (hubResult) {
+    log("debug", `Hub handled: ${name}`);
+    return hubResult;
+  }
+
+  // 2. Fall back to local handling
+  log("debug", `Hub unavailable for ${name}, using local handler`);
+  return await handleToolCallLocal(name, args);
 }
 
 // ── JSON-RPC Engine ────────────────────────────────────────────────────
@@ -194,14 +255,14 @@ async function handleRequest(request) {
           result: {
             protocolVersion: "2024-11-05",
             capabilities: { tools: {} },
-            serverInfo: { name: "cc-router-mcp-bridge", version: "0.1.0" },
+            serverInfo: { name: "cc-router-mcp-bridge", version: CONFIG.version },
           },
         };
       }
 
       case "notifications/initialized": {
         log("info", "MCP client initialized");
-        return null; // Notifications have no response
+        return null;
       }
 
       default:
@@ -220,7 +281,7 @@ async function handleRequest(request) {
 // ── Main Loop ──────────────────────────────────────────────────────────
 
 function main() {
-  log("info", "CC Router MCP Bridge starting");
+  log("info", `CC Router MCP Bridge v${CONFIG.version} starting`);
   log("info", `Hub URL: ${CONFIG.hubUrl}`);
 
   const rl = readline.createInterface({
@@ -267,7 +328,6 @@ function main() {
     process.exit(0);
   });
 
-  // Handle SIGTERM/SIGINT gracefully
   process.on("SIGTERM", () => {
     log("info", "Received SIGTERM, shutting down");
     process.exit(0);

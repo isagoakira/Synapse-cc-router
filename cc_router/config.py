@@ -15,6 +15,13 @@ BYPASS_PERMISSION = True  # Default bypass all permission checks
 MCP_ENABLED = False  # Default: TCP Hub mode
 MCP_SERVER_NAME = "synapse-hub"  # MCP server name
 
+# Health monitoring
+HEALTH_CHECK_INTERVAL = 30.0  # Seconds between health check cycles
+MAX_CONSECUTIVE_FAILURES = 3  # Mark dead after N failed checks
+
+# Parallel capacity
+MAX_CONCURRENT_TASKS = 5  # Maximum concurrent CC tasks
+
 # Global config state
 _config: dict[str, Any] = {
     "cc_cli_path": DEFAULT_CC_CLI_PATH,
@@ -25,6 +32,9 @@ _config: dict[str, Any] = {
     "bypass_permission": BYPASS_PERMISSION,
     "mcp_enabled": MCP_ENABLED,
     "mcp_server_name": MCP_SERVER_NAME,
+    "health_check_interval": HEALTH_CHECK_INTERVAL,
+    "max_consecutive_failures": MAX_CONSECUTIVE_FAILURES,
+    "max_concurrent": MAX_CONCURRENT_TASKS,
 }
 
 
@@ -93,3 +103,18 @@ def get_hub_endpoint() -> str:
 def get_bypass_permission() -> bool:
     """Get whether permission checks are bypassed by default."""
     return _config.get("bypass_permission", BYPASS_PERMISSION)
+
+
+def get_health_check_interval() -> float:
+    """Get health check interval in seconds."""
+    return _config.get("health_check_interval", HEALTH_CHECK_INTERVAL)
+
+
+def get_max_consecutive_failures() -> int:
+    """Get max consecutive failures before marking instance dead."""
+    return _config.get("max_consecutive_failures", MAX_CONSECUTIVE_FAILURES)
+
+
+def get_max_concurrent() -> int:
+    """Get max concurrent CC task limit."""
+    return _config.get("max_concurrent", MAX_CONCURRENT_TASKS)
