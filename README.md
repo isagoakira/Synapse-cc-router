@@ -2,7 +2,6 @@
 
 **Universal Multi-Agent ↔ Multi-CC (Claude Code) Connection Hub.**
 
-[![CI](https://github.com/isagoakira/Synapse-cc-router/actions/workflows/ci.yml/badge.svg)](https://github.com/isagoakira/Synapse-cc-router/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -22,6 +21,7 @@ CC Router enables **N×M** connections between any number of LLM Agents (Hermes,
         │  │   Router   │ │
         │  │  Registry  │ │
         │  │  EventBus  │ │
+        │  │  HTTP API  │ │
         │  │  MCP Svr   │ │
         │  └────────────┘ │
         └────────┬────────┘
@@ -45,6 +45,9 @@ CC Router enables **N×M** connections between any number of LLM Agents (Hermes,
 - **MCP Protocol** — Built-in MCP server enables CC instances to call tools during execution
 - **Multi-Agent** — Hermes, OpenClaw, and custom agents coexist and share the same CC pool
 - **Session Management** — Automatic session persistence and resumption (2-4s resume)
+- **Parallel Dispatch** — Concurrent task execution with health monitoring and automatic dead instance detection
+- **HTTP REST API** — Programmatic access to Hub operations via aiohttp (7 endpoints)
+- **Health Monitoring** — Background health checks with configurable intervals and failure thresholds
 
 ---
 
@@ -53,11 +56,8 @@ CC Router enables **N×M** connections between any number of LLM Agents (Hermes,
 ### Installation
 
 ```bash
-# From PyPI
-pip install cc-router
-
 # From source (latest)
-git clone https://github.com/anthropics/cc-router
+git clone https://github.com/isagoakira/Synapse-cc-router
 cd cc-router
 pip install -e ".[dev]"
 ```
@@ -128,6 +128,9 @@ asyncio.run(main())
 | `EventBus` | `event_bus.py` | Async pub/sub for real-time Agent ↔ CC communication |
 | `AgentAdapter` | `agent_adapter.py` | Protocol definition for connecting any LLM Agent |
 | `RouterMCPServer` | `router_mcp_server.py` | Built-in MCP tool server for CC callbacks |
+| `MCPHubServer` | `mcp_hub_server.py` | FastMCP-based external MCP server (stdio transport) |
+| `HTTPServer` | `http_server.py` | aiohttp REST API for external tools and MCP JS bridge |
+| `MCPBridge` | `mcp/router_mcp_bridge.js` | Node.js stdio bridge for MCP tool invocation |
 
 ### Data Flow
 
@@ -157,6 +160,45 @@ CCExecutor.run(task)
        ▼
 Result returned → EventBus notifies Agent
 ```
+
+### Health Monitoring
+
+The Hub runs a background health monitor that periodically checks CC instances:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `health_check_interval` | 30s | Interval between health checks |
+| `max_consecutive_failures` | 3 | Failures before marking instance as `dead` |
+| Check method | Process alive | Verifies subprocess is alive for `busy` instances |
+
+Instance status lifecycle: `idle` > `busy` > `dead` > `starting`
+
+### Parallel Capacity Management
+
+Tasks are queued when all CC instances are busy:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_concurrent` | 5 | Maximum parallel tasks |
+| Queue type | `asyncio.Queue` | Background `_process_queue` task |
+| Flow | Normal | Immediate execution when capacity available |
+| Flow | Full | Queued until instance released |
+
+---
+
+## HTTP API
+
+When running in TCP mode (`--port`), the Hub exposes a REST API:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Hub health status (instances/capacity/tasks/monitoring) |
+| `/api/tasks` | POST | Submit a task |
+| `/api/tasks/{id}` | GET | Get task status/result |
+| `/api/tasks` | GET | List tasks (optional `?agent_id=`) |
+| `/api/cc/register` | POST | Register a CC instance |
+| `/api/cc` | GET | List CC instances (optional `?status=`) |
+| `/api/tools/{name}` | POST | Call a RouterMCPBridge tool |
 
 ---
 
@@ -314,7 +356,7 @@ Add this to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "synapse_mcp": {
+    "cc_router_mcp": {
       "command": "cc-router",
       "args": ["--mcp"]
     }
@@ -336,22 +378,11 @@ Add this to your `claude_desktop_config.json`:
 
 ### Programmatic Usage
 
-**Recommended — FastMCP instance (new):**
-
 ```python
 from cc_router.mcp_hub_server import mcp
 
 # Start with stdio transport (for Claude Desktop)
 mcp.run(transport="stdio")
-```
-
-**Backward-compatible wrapper:**
-
-```python
-from cc_router.mcp_hub_server import MCPHubServer
-
-server = MCPHubServer()
-await server.run()
 ```
 
 **Using individual tools programmatically:**
@@ -365,9 +396,7 @@ from cc_router.mcp_hub_server import (
 import anyio
 
 async def example():
-    # FastMCP auto-validates input via Pydantic models
     result = await synapse_submit_task(
-        # Context is injected by FastMCP at runtime
         input=SubmitTaskInput(
             task="implement sorting algorithm",
             tag="code",
@@ -442,32 +471,64 @@ mypy cc_router/
 
 ```
 cc_router/
-├── __init__.py          # Public API exports
-├── __main__.py          # CLI entry point
-├── agent_adapter.py     # Agent protocol definition
-├── agent_registry.py    # Agent registration
-├── cc_adapter.py        # CC instance adapter
-├── cc_executor.py       # CC CLI executor (stream-json)
-├── cc_registry.py       # CC instance registry
-├── config.py            # Configuration management
-├── event_bus.py         # Async pub/sub event bus
-├── exceptions.py        # Error types
-├── hermes_executor.py   # Hermes subprocess executor
-├── openclaw_executor.py # OpenClaw subprocess executor
-├── router_hub.py        # Main orchestrator
-├── router_mcp_server.py # MCP tool server
-├── mcp_hub_server.py    # FastMCP-based External MCP Server (stdio transport)
-├── universal_router.py  # Task routing engine
-├── adapters/            # Built-in agent adapters
-├── installer/           # Interactive setup wizard
-└── mcp/                 # MCP tool implementations
+├── __init__.py              # Public API exports
+├── __main__.py              # CLI entry point
+├── agent_adapter.py         # Agent protocol definition
+├── agent_registry.py        # Agent registration
+├── cc_adapter.py            # CC instance adapter
+├── cc_executor.py           # CC CLI executor (stream-json)
+├── cc_registry.py           # CC instance registry
+├── config.py                # Configuration management
+├── event_bus.py             # Async pub/sub event bus
+├── exceptions.py            # Error types
+├── hermes_executor.py       # Hermes subprocess executor
+├── openclaw_executor.py     # OpenClaw subprocess executor
+├── router_hub.py            # Main orchestrator + health monitor
+├── router_mcp_server.py     # MCP tool server
+├── mcp_hub_server.py        # FastMCP-based external MCP server (stdio)
+├── http_server.py           # aiohttp REST API (7 endpoints)
+├── universal_router.py      # Task routing engine
+├── adapters/                # Built-in agent adapters
+│   ├── hermes_adapter.py
+│   └── openclaw_adapter.py
+├── installer/               # Interactive setup wizard
+│   ├── cli_wizard.py
+│   ├── config_writer.py
+│   └── env_detector.py
+└── mcp/                     # MCP tool implementations
+    ├── router_mcp_bridge.js # Node.js stdio bridge
+    └── tools/
+        ├── feishu_notify.py
+        ├── training_log.py
+        └── shared_data.py
+
+tests/
+├── test_basic.py            # Core functionality tests
+├── test_core.py             # Core component tests
+├── test_comprehensive.py    # Comprehensive integration tests
+├── test_http_server.py      # HTTP API endpoint tests
+├── test_mcp_hub.py          # MCP hub server tests
+├── test_robustness.py       # Error handling and edge case tests
+└── test_local_e2e.py        # End-to-end tests (requires CC CLI)
 ```
 
 ### Testing
 
 ```bash
-# Run all core tests
+# Run all tests
+pytest tests/ -v
+
+# Run specific test modules
 pytest tests/test_core.py tests/test_basic.py tests/test_comprehensive.py -v
+
+# Run HTTP API tests
+pytest tests/test_http_server.py -v
+
+# Run MCP hub tests
+pytest tests/test_mcp_hub.py -v
+
+# Run robustness/edge case tests
+pytest tests/test_robustness.py -v
 
 # Run end-to-end integration tests (requires CC CLI)
 RUN_REAL_CC=1 pytest tests/test_local_e2e.py -v
@@ -477,7 +538,7 @@ RUN_REAL_CC=1 pytest tests/test_local_e2e.py -v
 
 ## Project Status
 
-**Version 0.2.0** — Alpha stage, approaching public release.
+**Version 0.3.0** — Alpha stage, approaching public release.
 
 | Component | Status |
 |-----------|--------|
@@ -487,14 +548,15 @@ RUN_REAL_CC=1 pytest tests/test_local_e2e.py -v
 | MCP server & tools | ✅ Implemented & tested |
 | Hermes/OpenClaw adapters | ✅ Implemented & tested |
 | Session resume | ✅ Implemented & tested |
-| CI/CD pipeline | ✅ Configured |
-| Documentation | ✅ Complete |
-| **Public release** | 🔜 **Targeting v0.3.0** |
+| Parallel task dispatch | ✅ Implemented & tested |
+| Health monitoring | ✅ Implemented & tested |
+| HTTP REST API | ✅ Implemented & tested |
+| MCP JS bridge | ✅ Implemented & tested |
+| **Public release** | 🔜 **Targeting v0.4.0** |
 
 ### Roadmap
 
-- **v0.3.0** — Parallel task dispatch + health monitoring
-- **v0.4.0** — Web dashboard + metrics
+- **v0.4.0** — Web dashboard + metrics + performance benchmarking
 - **v1.0.0** — Stable API, production hardening
 
 ---
