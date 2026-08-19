@@ -166,6 +166,19 @@ class CCExecutor:
             subtype = event.get("subtype", "")
 
             if event_type == "result":
+                # claude 执行失败时也会发 result 事件（subtype=error_during_execution，
+                # is_error=true，无 result 文本，exit 0）。必须识别，否则上游会把它
+                # 当成功，得到 done + 空 result。
+                if event.get("is_error"):
+                    errs = event.get("errors") or []
+                    return CCResult(
+                        kind="ERROR",
+                        text="",
+                        session_id=event.get("session_id", ""),
+                        cost_usd=event.get("total_cost_usd", 0.0),
+                        duration_ms=event.get("duration_ms", 0),
+                        error="; ".join(str(e) for e in errs) or subtype or "execution error",
+                    )
                 return CCResult(
                     kind=subtype.upper() if subtype else "SUCCESS",
                     text=event.get("result", ""),

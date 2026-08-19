@@ -38,6 +38,7 @@ class Task:
     tag: Optional[str] = None
     capability: Optional[list[str]] = None
     timeout: float = 300.0
+    workspace: Optional[str] = None  # per-task workspace override
 
 
 # Global hub instance
@@ -108,12 +109,18 @@ class UniversalRouterHub:
         tag: str = None,
         capability: list[str] = None,
         timeout: float = 300.0,
+        workspace: str = None,
     ) -> str:
         """
         Agent submits task to Hub.
 
         If at max concurrent capacity, the task is queued and executed
         when a CC instance becomes available.
+
+        Args:
+            workspace: Optional per-task workspace override. If given,
+                CC will execute in this directory instead of its
+                registered default workspace.
 
         Returns task_id (used for tracking and callbacks).
         """
@@ -132,6 +139,7 @@ class UniversalRouterHub:
             tag=tag,
             capability=capability,
             timeout=timeout,
+            workspace=workspace,
         )
         self._tasks[task_id] = task_obj
 
@@ -139,22 +147,31 @@ class UniversalRouterHub:
         await self.event_bus.subscribe(agent_id, task_id)
 
         # 4. Check capacity — queue if at limit
+        #    同时检查目标实例是否空闲：单个 CC 是单会话 subprocess，
+        #    并发执行会共享同一 stdout 流导致 readuntil 冲突。
+        #    路由兜底（first_available）可能选中 busy 实例，此时必须排队。
         async with self._capacity_lock:
-            if self._active_task_count >= self._max_concurrent:
+            inst = self.cc_registry.get_by_id(route_result.cc_id)
+            inst_busy = inst is not None and inst.status != "idle"
+            if self._active_task_count >= self._max_concurrent or inst_busy:
                 task_obj.status = "queued"
-                await self._task_queue.put((task_id, route_result, timeout))
+                await self._task_queue.put((task_id, route_result, timeout, workspace))
                 logger.info(
-                    "Task %s queued (active=%d, max=%d)",
+                    "Task %s queued (active=%d, max=%d, inst_busy=%s)",
                     task_id,
                     self._active_task_count,
                     self._max_concurrent,
+                    inst_busy,
                 )
                 return task_id
 
             self._active_task_count += 1
+            # 同步占用实例：在 create_task 之前标记 busy，
+            # 避免紧随其后的提交路由到同一实例
+            self.cc_registry.update_status(route_result.cc_id, "busy")
 
         # 5. Execute async (non-blocking)
-        asyncio.create_task(self._execute_task(task_id, route_result, timeout))
+        asyncio.create_task(self._execute_task(task_id, route_result, timeout, workspace))
 
         return task_id
 
@@ -163,7 +180,7 @@ class UniversalRouterHub:
         Background task that processes the task queue when capacity frees up.
         """
         while True:
-            task_id, route_result, timeout = await self._task_queue.get()
+            task_id, route_result, timeout, workspace = await self._task_queue.get()
 
             # Check if the task was cancelled
             task_obj = self._tasks.get(task_id)
@@ -175,17 +192,31 @@ class UniversalRouterHub:
             async with self._capacity_lock:
                 if self._active_task_count >= self._max_concurrent:
                     # Still full — put back and wait
-                    await self._task_queue.put((task_id, route_result, timeout))
+                    await self._task_queue.put((task_id, route_result, timeout, workspace))
+                    self._task_queue.task_done()
+                    await asyncio.sleep(0.5)
+                    continue
+                # 目标实例仍忙 → 重新排队等空闲（单 CC 不可并发）
+                inst = self.cc_registry.get_by_id(route_result.cc_id)
+                if inst is not None and inst.status != "idle":
+                    await self._task_queue.put((task_id, route_result, timeout, workspace))
                     self._task_queue.task_done()
                     await asyncio.sleep(0.5)
                     continue
                 self._active_task_count += 1
+                self.cc_registry.update_status(route_result.cc_id, "busy")
 
             task_obj.status = "pending"
-            asyncio.create_task(self._execute_task(task_id, route_result, timeout))
+            asyncio.create_task(self._execute_task(task_id, route_result, timeout, workspace))
             self._task_queue.task_done()
 
-    async def _execute_task(self, task_id: str, route_result: RouteResult, timeout: float) -> None:
+    async def _execute_task(
+        self,
+        task_id: str,
+        route_result: RouteResult,
+        timeout: float,
+        workspace: str = None,
+    ) -> None:
         """Internal task execution (async)."""
         task_obj = self._tasks[task_id]
         cc_adapter = self.cc_registry.get_adapter(route_result.cc_id)
@@ -208,8 +239,15 @@ class UniversalRouterHub:
                 caller_agent_id=task_obj.caller_agent_id,
                 event_bus=self.event_bus,
                 timeout=timeout,
+                workspace=workspace,
             )
-            task_obj.status = "done"
+            if result.kind == "SUCCESS":
+                task_obj.status = "done"
+            else:
+                # claude 层错误（含 error_during_execution）：task 应标记 error，
+                # 不能当 done 返回空结果
+                task_obj.status = "error"
+                task_obj.error = result.error or f"CC result kind={result.kind}"
             task_obj.result = result
             await self.event_bus.publish(
                 task_obj.caller_agent_id,
@@ -223,6 +261,8 @@ class UniversalRouterHub:
                 task_obj.caller_agent_id, task_id, {"type": "error", "error": str(e)}
             )
         finally:
+            # 释放实例，让排队任务可以被调度到它
+            self.cc_registry.update_status(route_result.cc_id, "idle")
             await self._decrement_active()
 
     async def _decrement_active(self) -> None:

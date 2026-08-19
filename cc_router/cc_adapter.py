@@ -2,6 +2,7 @@
 CCAdapter - each CC instance connects to Hub via this adapter.
 """
 
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -65,7 +66,9 @@ class CCAdapter:
         self._executor = CCExecutor(cc_cli_path=self.cc_cli_path)
         self._current_task: Optional[str] = None
         self._status = "idle"
-        self._session_id: str = ""
+        # session 是 cwd 绑定的：按 normpath(workspace) 分开存，
+        # 避免 override 目录的 session 污染默认目录的 resume 链
+        self._sessions: dict[str, str] = {}
 
     @property
     def instance(self) -> CCInstance:
@@ -76,7 +79,7 @@ class CCAdapter:
             tag=self.tags,
             capability=self.capabilities,
             status=self._status,
-            session_id=self._session_id,
+            session_id=self._sessions.get(os.path.normpath(self.workspace), ""),
             pid=0,  # Filled at runtime
             adapter=self,
             metadata={},
@@ -89,13 +92,23 @@ class CCAdapter:
         event_bus=None,
         resume: bool = True,
         timeout: float = 300.0,
+        workspace: str = None,
     ) -> CCResult:
         """
         Execute a task on this CC instance.
         Optionally push partial messages via event_bus if subscribed.
+
+        Args:
+            workspace: Optional override of the CC instance's default
+                workspace for this single task. Falls back to
+                ``self.workspace`` when None.
         """
         self._status = "busy"
         self._current_task = task
+        effective_workspace = workspace or self.workspace
+
+        ws_key = os.path.normpath(effective_workspace)
+        session_id = self._sessions.get(ws_key, "") if resume else None
 
         try:
             # TODO: Implement partial message forwarding via event_bus
@@ -104,14 +117,14 @@ class CCAdapter:
 
             result = await self._executor.run(
                 task=task,
-                workspace=self.workspace,
-                session_id=self._session_id if resume else None,
-                resume=resume,
+                workspace=effective_workspace,
+                session_id=session_id,
+                resume=resume and bool(session_id),
                 timeout=timeout,
             )
 
             if result.kind == "SUCCESS":
-                self._session_id = result.session_id
+                self._sessions[ws_key] = result.session_id
                 self._status = "idle"
             else:
                 # Auth errors mean CC is dead, needs re-auth
@@ -145,7 +158,7 @@ class CCAdapter:
             "cc_id": self.cc_id,
             "status": self._status,
             "process_alive": process_alive,
-            "has_session": bool(self._session_id),
+            "has_session": bool(self._sessions),
         }
 
     async def terminate(self) -> None:
@@ -158,6 +171,6 @@ class CCAdapter:
         return {
             "cc_id": self.cc_id,
             "status": self._status,
-            "session_id": self._session_id,
+            "session_id": next(iter(self._sessions.values()), ""),
             "current_task": self._current_task,
         }
