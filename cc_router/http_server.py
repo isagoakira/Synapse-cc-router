@@ -91,6 +91,7 @@ async def handle_submit_task(request: web.Request) -> web.Response:
             tag=body.get("tag"),
             capability=body.get("capability"),
             timeout=float(body.get("timeout", 300.0)),
+            workspace=body.get("workspace"),
         )
         return _ok({"task_id": task_id}, status=201)
     except Exception as exc:
@@ -167,6 +168,8 @@ async def handle_register_cc(request: web.Request) -> web.Response:
         workspace=workspace,
         tags=body.get("tags"),
         capabilities=body.get("capabilities", ["general"]),
+        backend=body.get("backend", "claude"),
+        codex_cli_path=body.get("codex_cli_path"),
     )
     try:
         registered_id = hub.register_cc(adapter)

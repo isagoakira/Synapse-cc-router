@@ -119,6 +119,41 @@ async def async_main(args: argparse.Namespace) -> None:
     port = config.get("hub_port", 8765)
     logger.info("CC Router Hub starting on %s:%d", host, port)
 
+    # Auto-register any pre-configured CC instances (persistence on restart)
+    configured_instances = config.get("cc_instances", []) or []
+    if configured_instances:
+        from .cc_adapter import CCAdapter
+
+        for inst_cfg in configured_instances:
+            cc_id = inst_cfg.get("cc_id")
+            workspace = inst_cfg.get("workspace")
+            if not cc_id or not workspace:
+                logger.warning(
+                    "Skipping invalid cc_instances entry (need cc_id + workspace): %s",
+                    inst_cfg,
+                )
+                continue
+            try:
+                adapter = CCAdapter(
+                    cc_id=cc_id,
+                    workspace=workspace,
+                    tags=inst_cfg.get("tags"),
+                    capabilities=inst_cfg.get("capabilities"),
+                    cc_cli_path=inst_cfg.get("cc_cli_path"),
+                    backend=inst_cfg.get("backend", "claude"),
+                    codex_cli_path=inst_cfg.get("codex_cli_path"),
+                )
+                hub.register_cc(adapter)
+                logger.info(
+                    "Auto-registered CC: %s (workspace=%s, caps=%s, backend=%s)",
+                    cc_id,
+                    workspace,
+                    inst_cfg.get("capabilities"),
+                    inst_cfg.get("backend", "claude"),
+                )
+            except Exception as exc:
+                logger.error("Failed to auto-register %s: %s", cc_id, exc)
+
     # Start background tasks (health monitor + queue processor)
     hub.start_background_tasks()
     logger.info("Background tasks started (health monitor, queue processor)")

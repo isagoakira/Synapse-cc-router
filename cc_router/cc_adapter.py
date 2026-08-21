@@ -57,13 +57,25 @@ class CCAdapter:
         tags: list[str] = None,
         capabilities: list[str] = None,
         cc_cli_path: str = None,
+        backend: str = "claude",
+        codex_cli_path: str = None,
     ):
         self.cc_id = cc_id
         self.workspace = workspace
         self.tags = tags or []
         self.capabilities = capabilities or ["general"]
+        self.backend = backend
         self.cc_cli_path = cc_cli_path or get_cc_cli_path()
-        self._executor = CCExecutor(cc_cli_path=self.cc_cli_path)
+        if backend == "codex":
+            from .codex_executor import CodexExecutor
+            from .config import get_bypass_permission
+
+            self._executor = CodexExecutor(
+                codex_cli_path=codex_cli_path or "codex",
+                bypass_permissions=get_bypass_permission(),
+            )
+        else:
+            self._executor = CCExecutor(cc_cli_path=self.cc_cli_path)
         self._current_task: Optional[str] = None
         self._status = "idle"
         # session 是 cwd 绑定的：按 normpath(workspace) 分开存，
@@ -82,7 +94,7 @@ class CCAdapter:
             session_id=self._sessions.get(os.path.normpath(self.workspace), ""),
             pid=0,  # Filled at runtime
             adapter=self,
-            metadata={},
+            metadata={"backend": self.backend},
         )
 
     async def execute(
