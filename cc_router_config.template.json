@@ -14,5 +14,26 @@
     "memory_gb": 2,
     "cold_start_timeout_s": 30,
     "resume_timeout_s": 10
-  }
+  },
+  "cc_instances": [
+    {
+      "comment": "Pre-configured CC instance. v0.4.0: each entry is auto-registered at Hub startup, so instances survive Router restarts. Add as many as you need; per-instance cc_cli_path overrides the global cc_cli_path above.",
+      "cc_id": "cc_code",
+      "workspace": "/projects/code",
+      "tags": ["code"],
+      "capabilities": ["code", "debug", "implement"]
+    },
+    {
+      "cc_id": "cc_ml",
+      "workspace": "/projects/ml",
+      "tags": ["ml"],
+      "capabilities": ["ml", "training", "experiment"]
+    },
+    {
+      "cc_id": "cc_paper",
+      "workspace": "/projects/paper",
+      "tags": ["paper"],
+      "capabilities": ["paper", "writing", "research"]
+    }
+  ]
 }

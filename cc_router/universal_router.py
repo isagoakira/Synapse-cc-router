@@ -1,12 +1,14 @@
 """
-UniversalRouter - 根据 tag/path/capability 路由任务到合适的 CC 实例。
+UniversalRouter - 根据 tag/capability 路由任务到合适的 CC 实例。
+
+注：v0.4 起 CC 实例不再绑定固定 workspace；
+任务可通过 submit_task(workspace=...) 覆盖执行目录。
 """
 
 import asyncio
 import re
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 from .cc_registry import CCRegistry
 from .exceptions import RoutingError
@@ -14,7 +16,6 @@ from .exceptions import RoutingError
 
 class RoutingStrategy(Enum):
     TAG_MATCH = "tag_match"
-    PATH_MATCH = "path_match"
     CAPABILITY = "capability"
     ROUND_ROBIN = "round_robin"
     DEFAULT = "default"
@@ -45,13 +46,15 @@ class UniversalRouter:
     """
     Universal routing - not bound to any specific Agent.
 
-    Strategy priority:
+    Strategy priority (v0.4+):
     1. Explicit tag parameter
     2. @tag in message
-    3. Workspace path matching
-    4. Capability keyword matching
-    5. Round-robin idle instances
-    6. First available instance (fallback)
+    3. Capability keyword matching
+    4. Round-robin idle instances
+    5. First available instance (fallback)
+
+    Workspace is no longer used for routing — it's a per-task execution
+    parameter supplied at submission time.
     """
 
     def __init__(self, cc_registry: CCRegistry):
@@ -61,7 +64,6 @@ class UniversalRouter:
 
         # Regex patterns
         self.TAG_PAT = re.compile(r"^@(\w+)\s+(.+)$")
-        self.PATH_PAT = re.compile(r"([A-Z]:[/\\](?:[^\\/:*?\"<>|\r\n]+[/\\]?)+)")
 
     async def route(
         self,
@@ -104,21 +106,7 @@ class UniversalRouter:
                     workspace=inst.workspace,
                 )
 
-        # 3. Workspace path matching
-        path_m = self.PATH_PAT.search(message)
-        if path_m:
-            path = Path(path_m.group(1))
-            for inst in self.cc_registry.list_by_status("idle"):
-                inst_path = Path(inst.workspace)
-                if path in inst_path.parents or inst_path in path.parents:
-                    return RouteResult(
-                        cc_id=inst.cc_id,
-                        strategy=RoutingStrategy.PATH_MATCH,
-                        reason=f"workspace={inst.workspace}",
-                        workspace=inst.workspace,
-                    )
-
-        # 4. Explicit capability
+        # 3. Explicit capability
         if capability:
             for cap in capability:
                 for inst in self.cc_registry.list_by_status("idle"):
@@ -130,7 +118,7 @@ class UniversalRouter:
                             workspace=inst.workspace,
                         )
 
-        # 5. Keyword matching in message
+        # 4. Keyword matching in message
         msg_lower = message.lower()
         for cap, keywords in CAPABILITY_KEYWORDS.items():
             if cap == "general":
@@ -145,7 +133,7 @@ class UniversalRouter:
                             workspace=inst.workspace,
                         )
 
-        # 6. Round-robin idle
+        # 5. Round-robin idle
         idle = self.cc_registry.list_by_status("idle")
         if idle:
             async with self._lock:
@@ -159,7 +147,7 @@ class UniversalRouter:
                 workspace=inst.workspace,
             )
 
-        # 7. Fallback: any available instance
+        # 6. Fallback: any available instance
         all_instances = self.cc_registry.list_all()
         available = [i for i in all_instances if i.status in ("idle", "busy")]
         if available:

@@ -64,7 +64,9 @@ def load_config(config_path: Optional[str] = None) -> dict:
 
     if config_path and Path(config_path).exists():
         try:
-            with open(config_path, "r") as f:
+            # Use utf-8-sig to tolerate UTF-8 BOM (PowerShell Set-Content
+            # -Encoding UTF8 writes BOM by default).
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 loaded = json.load(f)
                 _config.update(loaded)
         except (json.JSONDecodeError, OSError) as e:
